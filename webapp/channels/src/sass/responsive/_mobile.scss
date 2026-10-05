@@ -204,6 +204,7 @@
                             .user-settings {
                                 overflow: auto;
                                 max-height: 100vh;
+                                max-height: 100dvh;
                                 padding: 20px 30px;
                             }
                         }
@@ -219,6 +220,7 @@
                 .modal-body {
                     overflow: auto;
                     max-height: calc(100vh - 62px);
+                    max-height: calc(100dvh - 62px);
                 }
             }
 
@@ -377,12 +379,14 @@
         display: flex;
         width: 100vw;
         height: 100vh;
+        height: 100dvh;
         flex-direction: column;
         border-radius: 0;
         margin-right: 0;
 
         .search-grid-container {
             height: calc(100vh - 170px);
+            height: calc(100dvh - 170px);
         }
     }
 
@@ -2018,10 +2022,17 @@ label {
     }
 }
 
-@media screen and (-webkit-min-device-pixel-ratio: 0) {
-    select,
+// Keep editable controls large enough to avoid automatic zoom on iOS. Include
+// touch devices in landscape, where the viewport can exceed the mobile breakpoint.
+// The override is intentional: component styles can otherwise restore smaller fonts.
+// Preserve the viewport's default pinch-to-zoom behavior for accessibility.
+@media screen and (max-width: 768px), screen and (hover: none) and (pointer: coarse) {
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='hidden'], [type='button'], [type='submit'], [type='reset'], [type='image']),
     textarea,
-    input {
-        font-size: 16px;
+    select,
+    [contenteditable=''],
+    [contenteditable='true'],
+    [contenteditable='plaintext-only'] {
+        font-size: max(16px, 1em) !important;
     }
 }
