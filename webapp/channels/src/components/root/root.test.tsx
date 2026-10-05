@@ -117,7 +117,7 @@ describe('components/Root', () => {
         window.matchMedia = originalMatchMedia;
     });
 
-    test('should load config and license on mount and redirect to sign-up page', async () => {
+    test('should load config and license on mount and redirect to login page', async () => {
         const props = {
             ...baseProps,
             noAccounts: true,
@@ -126,7 +126,7 @@ describe('components/Root', () => {
         renderWithContext(<Root {...props}/>);
 
         await waitFor(() => {
-            expect(props.history.push).toHaveBeenCalledWith('/signup_user_complete');
+            expect(props.history.push).toHaveBeenCalledWith('/login');
         });
     });
 
@@ -204,7 +204,7 @@ describe('components/Root', () => {
         rerender(<Root {...props2}/>);
 
         await waitFor(() => {
-            expect(props.history.push).toHaveBeenLastCalledWith('/signup_user_complete');
+            expect(props.history.push).toHaveBeenLastCalledWith('/login');
         });
     });
 

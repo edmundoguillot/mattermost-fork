@@ -577,8 +577,51 @@ func TestCreateUserWithToken(t *testing.T) {
 	mainHelper.Parallel(t)
 	th := Setup(t).InitBasic(t)
 
+	t.Run("invitation requires names and keeps email fixed", func(t *testing.T) {
+		email := th.GenerateTestEmail()
+		token := model.NewToken(model.TokenTypeTeamInvitation, model.MapToJSON(map[string]string{"teamId": th.BasicTeam.Id, "email": email}))
+		require.NoError(t, th.App.Srv().Store().Token().Save(token))
+		defer th.App.DeleteToken(token)
+		user := &model.User{Email: email, Password: model.NewTestPassword()}
+		_, resp, err := th.Client.CreateUserWithToken(context.Background(), user, token.Token)
+		require.Error(t, err)
+		CheckBadRequestStatus(t, resp)
+		user.FirstName = "José"
+		_, resp, err = th.Client.CreateUserWithToken(context.Background(), user, token.Token)
+		require.Error(t, err)
+		CheckBadRequestStatus(t, resp)
+		user.LastName = "García"
+		user.Email = th.GenerateTestEmail()
+		_, resp, err = th.Client.CreateUserWithToken(context.Background(), user, token.Token)
+		require.Error(t, err)
+		CheckBadRequestStatus(t, resp)
+		_, storeErr := th.App.Srv().Store().Token().GetByToken(token.Token)
+		require.NoError(t, storeErr, "invalid signup must not consume the invitation")
+	})
+
+	t.Run("duplicate names get an available username and retain the original password", func(t *testing.T) {
+		lastName := strings.ToLower(model.NewId())
+		for i := 1; i <= 2; i++ {
+			email := th.GenerateTestEmail()
+			password := model.NewTestPassword()
+			token := model.NewToken(model.TokenTypeTeamInvitation, model.MapToJSON(map[string]string{"teamId": th.BasicTeam.Id, "email": email}))
+			require.NoError(t, th.App.Srv().Store().Token().Save(token))
+			user := &model.User{Email: email, FirstName: "José", LastName: lastName, Password: password, Username: "ignored"}
+			created, resp, err := th.Client.CreateUserWithToken(context.Background(), user, token.Token)
+			require.NoError(t, err)
+			CheckCreatedStatus(t, resp)
+			expected := "jose." + lastName
+			if i == 2 {
+				expected += "2"
+			}
+			require.Equal(t, expected, created.Username)
+			_, _, err = th.Client.Login(context.Background(), email, password)
+			require.NoError(t, err)
+		}
+	})
+
 	t.Run("CreateWithTokenHappyPath", func(t *testing.T) {
-		user := model.User{Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
+		user := model.User{FirstName: "Corey", LastName: "Hulen", Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
 		token := model.NewToken(
 			model.TokenTypeTeamInvitation,
 			model.MapToJSON(map[string]string{"teamId": th.BasicTeam.Id, "email": user.Email}),
@@ -603,7 +646,7 @@ func TestCreateUserWithToken(t *testing.T) {
 		require.Equal(t, th.BasicTeam.Id, teams[0].Id, "The user joined team must be the team provided.")
 	})
 
-	t.Run("token profile overrides tampered request fields", func(t *testing.T) {
+	t.Run("signup names override inviter profile fields and determine username", func(t *testing.T) {
 		email := th.GenerateTestEmail()
 		tokenUsername := GenerateTestUsername()
 		token := model.NewToken(
@@ -628,13 +671,13 @@ func TestCreateUserWithToken(t *testing.T) {
 		createdUser, resp, err := th.Client.CreateUserWithToken(context.Background(), user, token.Token)
 		require.NoError(t, err)
 		CheckCreatedStatus(t, resp)
-		require.Equal(t, tokenUsername, createdUser.Username)
-		require.Equal(t, "TokenFirst", createdUser.FirstName)
-		require.Equal(t, "TokenLast", createdUser.LastName)
+		require.Equal(t, "tamperedfirst.tamperedlast", createdUser.Username)
+		require.Equal(t, "TamperedFirst", createdUser.FirstName)
+		require.Equal(t, "TamperedLast", createdUser.LastName)
 	})
 
 	th.TestForSystemAdminAndLocal(t, func(t *testing.T, client *model.Client4) {
-		user := model.User{Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
+		user := model.User{FirstName: "Corey", LastName: "Hulen", Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
 		token := model.NewToken(
 			model.TokenTypeTeamInvitation,
 			model.MapToJSON(map[string]string{"teamId": th.BasicTeam.Id, "email": user.Email}),
@@ -660,7 +703,7 @@ func TestCreateUserWithToken(t *testing.T) {
 	}, "CreateWithTokenHappyPath")
 
 	t.Run("NoToken", func(t *testing.T) {
-		user := model.User{Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
+		user := model.User{FirstName: "Corey", LastName: "Hulen", Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
 		token := model.NewToken(
 			model.TokenTypeTeamInvitation,
 			model.MapToJSON(map[string]string{"teamId": th.BasicTeam.Id, "email": user.Email}),
@@ -677,7 +720,7 @@ func TestCreateUserWithToken(t *testing.T) {
 	})
 
 	t.Run("TokenExpired", func(t *testing.T) {
-		user := model.User{Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
+		user := model.User{FirstName: "Corey", LastName: "Hulen", Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
 		timeNow := time.Now()
 		past49Hours := timeNow.Add(-49*time.Hour).UnixNano() / int64(time.Millisecond)
 		token := model.NewToken(
@@ -698,7 +741,7 @@ func TestCreateUserWithToken(t *testing.T) {
 	})
 
 	t.Run("WrongToken", func(t *testing.T) {
-		user := model.User{Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
+		user := model.User{FirstName: "Corey", LastName: "Hulen", Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
 
 		_, resp, err := th.Client.CreateUserWithToken(context.Background(), &user, "wrong")
 		require.Error(t, err)
@@ -712,7 +755,7 @@ func TestCreateUserWithToken(t *testing.T) {
 			th.App.UpdateConfig(func(cfg *model.Config) { cfg.TeamSettings.EnableUserCreation = enableUserCreation })
 		}()
 
-		user := model.User{Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
+		user := model.User{FirstName: "Corey", LastName: "Hulen", Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
 
 		token := model.NewToken(
 			model.TokenTypeTeamInvitation,
@@ -735,7 +778,7 @@ func TestCreateUserWithToken(t *testing.T) {
 		enableUserCreation := th.App.Config().TeamSettings.EnableUserCreation
 		defer th.App.UpdateConfig(func(cfg *model.Config) { cfg.TeamSettings.EnableUserCreation = enableUserCreation })
 
-		user := model.User{Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
+		user := model.User{FirstName: "Corey", LastName: "Hulen", Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
 
 		token := model.NewToken(
 			model.TokenTypeTeamInvitation,
@@ -756,7 +799,7 @@ func TestCreateUserWithToken(t *testing.T) {
 	}, "EnableUserCreationDisable")
 
 	t.Run("EnableOpenServerDisable", func(t *testing.T) {
-		user := model.User{Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
+		user := model.User{FirstName: "Corey", LastName: "Hulen", Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemAdminRoleId + " " + model.SystemUserRoleId}
 
 		token := model.NewToken(
 			model.TokenTypeTeamInvitation,
@@ -785,7 +828,7 @@ func TestCreateUserWithToken(t *testing.T) {
 	})
 
 	t.Run("Validate inviter user has permissions on channels he is inviting", func(t *testing.T) {
-		user := model.User{Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemUserRoleId}
+		user := model.User{FirstName: "Corey", LastName: "Hulen", Email: th.GenerateTestEmail(), Nickname: "Corey Hulen", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemUserRoleId}
 		channelIdWithoutPermissions := th.BasicPrivateChannel2.Id
 		channelIds := th.BasicChannel.Id + " " + channelIdWithoutPermissions
 		token := model.NewToken(
@@ -824,7 +867,7 @@ func TestCreateUserWithToken(t *testing.T) {
 	})
 
 	t.Run("Validate inviterUser permissions on channels he is inviting, when inviting guests", func(t *testing.T) {
-		user := model.User{Email: th.GenerateTestEmail(), Nickname: "Guest User", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemUserRoleId}
+		user := model.User{FirstName: "Corey", LastName: "Hulen", Email: th.GenerateTestEmail(), Nickname: "Guest User", Password: model.NewTestPassword(), Username: GenerateTestUsername(), Roles: model.SystemUserRoleId}
 		channelIdWithoutPermissions := th.BasicPrivateChannel2.Id
 		channelIds := th.BasicChannel.Id + " " + channelIdWithoutPermissions
 		token := model.NewToken(

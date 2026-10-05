@@ -91,10 +91,8 @@ ifneq ($(wildcard channels/imports/imports.go),)
 	IGNORE := $(shell rm -f channels/imports/imports.go)
 endif
 
-# Source available, already included with enterprise but also available during development.
-ifeq ($(BUILD_NUMBER),dev)
+# This fork includes the available metrics and search implementations in all builds.
 	BUILD_TAGS += sourceavailable
-endif
 
 # Webapp
 BUILD_WEBAPP_DIR ?= ../webapp
@@ -123,6 +121,7 @@ endif
 
 DELVE ?= dlv
 LDFLAGS += -X "github.com/mattermost/mattermost/server/public/model.BuildNumber=$(BUILD_NUMBER)"
+LDFLAGS += -X "github.com/mattermost/mattermost/server/public/model.BuildForkFeatures=true"
 LDFLAGS += -X "github.com/mattermost/mattermost/server/public/model.BuildDate=$(BUILD_DATE)"
 LDFLAGS += -X "github.com/mattermost/mattermost/server/public/model.BuildHash=$(BUILD_HASH)"
 LDFLAGS += -X "github.com/mattermost/mattermost/server/public/model.BuildHashEnterprise=$(BUILD_HASH_ENTERPRISE)"

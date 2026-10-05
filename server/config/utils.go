@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"reflect"
 	"strings"
 
@@ -130,6 +131,8 @@ func Desanitize(actual, target *model.Config) {
 
 // fixConfig patches invalid or missing data in the configuration.
 func fixConfig(cfg *model.Config) {
+	disableVendorReporting(cfg)
+	removeVendorNavigation(cfg)
 	// Ensure SiteURL has no trailing slash.
 	if strings.HasSuffix(*cfg.ServiceSettings.SiteURL, "/") {
 		*cfg.ServiceSettings.SiteURL = strings.TrimRight(*cfg.ServiceSettings.SiteURL, "/")
@@ -145,6 +148,58 @@ func fixConfig(cfg *model.Config) {
 	fixInvalidLocales(cfg)
 	fixLegacyImageProxyType(cfg)
 	fixRetiredFeatureFlags(cfg)
+}
+
+// removeVendorNavigation removes vendor destinations from the clinic's support
+// and app menus while allowing administrators to provide their own internal links.
+func removeVendorNavigation(cfg *model.Config) {
+	for _, link := range []*string{
+		cfg.SupportSettings.AboutLink,
+		cfg.SupportSettings.HelpLink,
+		cfg.SupportSettings.PrivacyPolicyLink,
+		cfg.SupportSettings.TermsOfServiceLink,
+		cfg.SupportSettings.ReportAProblemLink,
+		cfg.NativeAppSettings.AppDownloadLink,
+		cfg.NativeAppSettings.AndroidAppDownloadLink,
+		cfg.NativeAppSettings.IosAppDownloadLink,
+	} {
+		if link == nil {
+			continue
+		}
+		parsed, err := url.Parse(*link)
+		if err != nil {
+			continue
+		}
+		host := strings.ToLower(parsed.Hostname())
+		if host == "mattermost.com" || strings.HasSuffix(host, ".mattermost.com") {
+			*link = ""
+		}
+	}
+}
+
+// disableVendorReporting enforces this fork's privacy policy after defaults and
+// environment overrides, including when loading an existing configuration.
+func disableVendorReporting(cfg *model.Config) {
+	*cfg.LogSettings.EnableDiagnostics = false
+	*cfg.LogSettings.EnableSentry = false
+	*cfg.ServiceSettings.EnableSecurityFixAlert = false
+	*cfg.ServiceSettings.SplitKey = ""
+	*cfg.ServiceSettings.EnableAWSMetering = false
+	*cfg.AnnouncementSettings.AdminNoticesEnabled = false
+	*cfg.AnnouncementSettings.UserNoticesEnabled = false
+	*cfg.PluginSettings.EnableRemoteMarketplace = false
+	cfg.PluginSettings.PluginStates[model.PluginIdNPS] = &model.PluginState{Enable: false}
+	*cfg.CloudSettings.PreviewModalBucketURL = ""
+
+	// A self-hosted push proxy can still be used without sending notifications
+	// through Mattermost's infrastructure.
+	if pushURL, err := url.Parse(*cfg.EmailSettings.PushNotificationServer); err == nil {
+		host := strings.ToLower(pushURL.Hostname())
+		if host == "mattermost.com" || strings.HasSuffix(host, ".mattermost.com") {
+			*cfg.EmailSettings.SendPushNotifications = false
+			*cfg.EmailSettings.PushNotificationServer = ""
+		}
+	}
 }
 
 // fixRetiredFeatureFlags forces off feature flags whose features have been removed.

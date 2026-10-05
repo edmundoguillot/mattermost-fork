@@ -1158,7 +1158,7 @@ func TestCreateUserWithToken(t *testing.T) {
 	mainHelper.Parallel(t)
 	th := Setup(t).InitBasic(t)
 
-	user := model.User{Email: strings.ToLower(model.NewId()) + "success+test@example.com", Nickname: "Darth Vader", Username: "vader" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
+	user := model.User{FirstName: "Darth", LastName: "Vader", Email: strings.ToLower(model.NewId()) + "success+test@example.com", Nickname: "Darth Vader", Username: "vader" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
 
 	t.Run("invalid token", func(t *testing.T) {
 		_, err := th.App.CreateUserWithToken(th.Context, &user, &model.Token{Token: "123"})
@@ -1171,10 +1171,6 @@ func TestCreateUserWithToken(t *testing.T) {
 			model.MapToJSON(map[string]string{"teamID": th.BasicTeam.Id, "email": user.Email}),
 		)
 		require.NoError(t, th.App.Srv().Store().Token().Save(token))
-		defer func() {
-			appErr := th.App.DeleteToken(token)
-			require.Nil(t, appErr)
-		}()
 		_, err := th.App.CreateUserWithToken(th.Context, &user, token)
 		require.NotNil(t, err, "Should fail on bad token type")
 	})
@@ -1198,10 +1194,6 @@ func TestCreateUserWithToken(t *testing.T) {
 		)
 		token.CreateAt = model.GetMillis() - model.InvitationExpiryTime - 1
 		require.NoError(t, th.App.Srv().Store().Token().Save(token))
-		defer func() {
-			appErr := th.App.DeleteToken(token)
-			require.Nil(t, appErr)
-		}()
 		_, err := th.App.CreateUserWithToken(th.Context, &user, token)
 		require.NotNil(t, err, "Should fail on expired token")
 	})
@@ -1212,17 +1204,13 @@ func TestCreateUserWithToken(t *testing.T) {
 			model.MapToJSON(map[string]string{"teamId": model.NewId(), "email": user.Email}),
 		)
 		require.NoError(t, th.App.Srv().Store().Token().Save(token))
-		defer func() {
-			appErr := th.App.DeleteToken(token)
-			require.Nil(t, appErr)
-		}()
 		_, err := th.App.CreateUserWithToken(th.Context, &user, token)
 		require.NotNil(t, err, "Should fail on bad team id")
 	})
 
 	t.Run("valid regular user request", func(t *testing.T) {
 		invitationEmail := strings.ToLower(model.NewId()) + "other-email@test.com"
-		u := model.User{Email: invitationEmail, Nickname: "Darth Vader", Username: "vader" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
+		u := model.User{FirstName: "Darth", LastName: "Vader", Email: invitationEmail, Nickname: "Darth Vader", Username: "vader" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
 		token := model.NewToken(
 			model.TokenTypeTeamInvitation,
 			model.MapToJSON(map[string]string{"teamId": th.BasicTeam.Id, "email": invitationEmail}),
@@ -1241,10 +1229,10 @@ func TestCreateUserWithToken(t *testing.T) {
 		assert.Len(t, members, 2)
 	})
 
-	t.Run("token profile fields override client-supplied user data", func(t *testing.T) {
+	t.Run("signup names determine username even when inviter presets profile fields", func(t *testing.T) {
 		invitationEmail := strings.ToLower(model.NewId()) + "other-email@test.com"
 		presetUsername := "preset" + model.NewId()
-		// The client-supplied payload simulates a tampered signup request.
+		// Names supplied during signup determine the profile and generated username.
 		u := model.User{Email: invitationEmail, Username: "tampered" + model.NewId(), FirstName: "Tampered", LastName: "Values", Password: model.NewTestPassword(), AuthService: ""}
 		token := model.NewToken(
 			model.TokenTypeTeamInvitation,
@@ -1259,15 +1247,15 @@ func TestCreateUserWithToken(t *testing.T) {
 		require.NoError(t, th.App.Srv().Store().Token().Save(token))
 		newUser, err := th.App.CreateUserWithToken(th.Context, &u, token)
 		require.Nil(t, err, "Should create the user. err=%v", err)
-		require.Equal(t, presetUsername, newUser.Username, "The username must be the pre-set one")
-		require.Equal(t, "Dave", newUser.FirstName, "The first name must be the pre-set one")
-		require.Equal(t, "Roberts", newUser.LastName, "The last name must be the pre-set one")
+		require.Equal(t, "tampered.values", newUser.Username)
+		require.Equal(t, "Tampered", newUser.FirstName)
+		require.Equal(t, "Values", newUser.LastName)
 	})
 
-	t.Run("token username is lowercased", func(t *testing.T) {
+	t.Run("inviter username is ignored when deriving the signup username", func(t *testing.T) {
 		invitationEmail := strings.ToLower(model.NewId()) + "other-email@test.com"
 		presetUsername := "preset" + model.NewId()
-		u := model.User{Email: invitationEmail, Username: "vader" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
+		u := model.User{FirstName: "Darth", LastName: "Vader", Email: invitationEmail, Username: "vader" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
 		token := model.NewToken(
 			model.TokenTypeTeamInvitation,
 			model.MapToJSON(map[string]string{
@@ -1279,12 +1267,12 @@ func TestCreateUserWithToken(t *testing.T) {
 		require.NoError(t, th.App.Srv().Store().Token().Save(token))
 		newUser, err := th.App.CreateUserWithToken(th.Context, &u, token)
 		require.Nil(t, err, "Should create the user. err=%v", err)
-		require.Equal(t, presetUsername, newUser.Username)
+		require.True(t, strings.HasPrefix(newUser.Username, "darth.vader"))
 	})
 
-	t.Run("token with taken username fails with username_exists", func(t *testing.T) {
+	t.Run("taken inviter username does not prevent generating an available username", func(t *testing.T) {
 		invitationEmail := strings.ToLower(model.NewId()) + "other-email@test.com"
-		u := model.User{Email: invitationEmail, Username: "vader" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
+		u := model.User{FirstName: "Darth", LastName: "Vader", Email: invitationEmail, Username: "vader" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
 		token := model.NewToken(
 			model.TokenTypeTeamInvitation,
 			model.MapToJSON(map[string]string{
@@ -1294,13 +1282,8 @@ func TestCreateUserWithToken(t *testing.T) {
 			}),
 		)
 		require.NoError(t, th.App.Srv().Store().Token().Save(token))
-		defer func() {
-			appErr := th.App.DeleteToken(token)
-			require.Nil(t, appErr)
-		}()
 		_, err := th.App.CreateUserWithToken(th.Context, &u, token)
-		require.NotNil(t, err)
-		require.Equal(t, "app.user.save.username_exists.app_error", err.Id)
+		require.Nil(t, err)
 	})
 
 	t.Run("valid guest request", func(t *testing.T) {
@@ -1311,7 +1294,7 @@ func TestCreateUserWithToken(t *testing.T) {
 		)
 
 		require.NoError(t, th.App.Srv().Store().Token().Save(token))
-		guest := model.User{Email: invitationEmail, Nickname: "Darth Vader", Username: "vader" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
+		guest := model.User{FirstName: "Darth", LastName: "Vader", Email: invitationEmail, Nickname: "Darth Vader", Username: "vader" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
 		newGuest, err := th.App.CreateUserWithToken(th.Context, &guest, token)
 		require.Nil(t, err, "Should add user to the team. err=%v", err)
 
@@ -1347,6 +1330,8 @@ func TestCreateUserWithToken(t *testing.T) {
 		require.NoError(t, th.App.Srv().Store().Token().Save(forbiddenDomainToken))
 		require.NoError(t, th.App.Srv().Store().Token().Save(grantedDomainToken))
 		guest := model.User{
+			FirstName:   "Darth",
+			LastName:    "Vader",
 			Email:       forbiddenInvitationEmail,
 			Nickname:    "Darth Vader",
 			Username:    "vader" + model.NewId(),
@@ -1393,6 +1378,8 @@ func TestCreateUserWithToken(t *testing.T) {
 		)
 		require.NoError(t, th.App.Srv().Store().Token().Save(token))
 		guest := model.User{
+			FirstName:   "Darth",
+			LastName:    "Vader",
 			Email:       invitationEmail,
 			Nickname:    "Darth Vader",
 			Username:    "vader" + model.NewId(),
@@ -1431,7 +1418,7 @@ func TestCreateUserWithToken(t *testing.T) {
 		)
 		require.NoError(t, th.App.Srv().Store().Token().Save(token))
 
-		guest := model.User{Email: invitationEmail, Nickname: "Magic Link Guest", Username: "magiclinkguest" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
+		guest := model.User{FirstName: "Darth", LastName: "Vader", Email: invitationEmail, Nickname: "Magic Link Guest", Username: "magiclinkguest" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
 		newGuest, err := th.App.CreateUserWithToken(th.Context, &guest, token)
 		require.Nil(t, err, "Should create guest user successfully")
 		require.True(t, newGuest.IsGuest())
@@ -1480,7 +1467,7 @@ func TestCreateUserWithToken(t *testing.T) {
 		)
 		require.NoError(t, th.App.Srv().Store().Token().Save(token))
 
-		guest := model.User{Email: invitationEmail, Nickname: "Magic Link Guest", Username: "magiclinkguest" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
+		guest := model.User{FirstName: "Darth", LastName: "Vader", Email: invitationEmail, Nickname: "Magic Link Guest", Username: "magiclinkguest" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
 		newGuest, err := th.App.CreateUserWithToken(th.Context, &guest, token)
 		require.Nil(t, err)
 
@@ -1514,7 +1501,7 @@ func TestCreateUserWithToken(t *testing.T) {
 		)
 		require.NoError(t, th.App.Srv().Store().Token().Save(token))
 
-		regularUser := model.User{Email: invitationEmail, Nickname: "Regular User", Username: "regular" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
+		regularUser := model.User{FirstName: "Darth", LastName: "Vader", Email: invitationEmail, Nickname: "Regular User", Username: "regular" + model.NewId(), Password: model.NewTestPassword(), AuthService: ""}
 		newUser, err := th.App.CreateUserWithToken(th.Context, &regularUser, token)
 		require.Nil(t, err)
 		require.False(t, newUser.IsGuest())
@@ -2788,83 +2775,15 @@ func TestCreateUserWithInitialPreferences(t *testing.T) {
 }
 
 func TestSendSubscriptionHistoryEvent(t *testing.T) {
-	mainHelper.Parallel(t)
-	cloudProduct := &model.Product{
-		ID:                "prod_test1",
-		Name:              "name1",
-		Description:       "description1",
-		PricePerSeat:      1000,
-		SKU:               "sku1",
-		PriceID:           "price_id1",
-		Family:            "family1",
-		RecurringInterval: "year",
-		BillingScheme:     "billing_scheme1",
-		CrossSellsTo:      "prod_test2",
-	}
-
-	subscription := &model.Subscription{
-		ID:         "MySubscriptionID",
-		CustomerID: "MyCustomer",
-		ProductID:  "SomeProductId",
-		AddOns:     []string{},
-		StartAt:    1000000000,
-		EndAt:      2000000000,
-		CreateAt:   1000000000,
-		Seats:      10,
-		DNS:        "some.dns.server",
-	}
-
-	subscriptionHistory := &model.SubscriptionHistory{
-		ID:             "sub_history",
-		SubscriptionID: "MySubscriptionID",
-		Seats:          10,
-		CreateAt:       1000000000,
-	}
-
-	t.Run("Should not create SubscriptionHistoryEvent if the license is not cloud", func(t *testing.T) {
-		th := Setup(t).InitBasic(t)
-
-		th.App.Srv().SetLicense(model.NewTestLicense(""))
-
-		userID := "123"
-
-		subscriptionHistoryEvent, err := th.App.SendSubscriptionHistoryEvent(userID)
+	t.Parallel()
+	// No server, store or Cloud implementation is needed: reporting must not
+	// access any of them, regardless of the calling user.
+	app := &App{}
+	for _, userID := range []string{"", "123"} {
+		event, err := app.SendSubscriptionHistoryEvent(userID)
 		require.NoError(t, err)
-		require.Nil(t, subscriptionHistoryEvent)
-	})
-
-	t.Run("Should create SubscriptionHistoryEvent if the license is cloud and the product is yearly", func(t *testing.T) {
-		th := SetupWithStoreMock(t)
-
-		th.App.Srv().SetLicense(model.NewTestLicense("cloud"))
-
-		cloud := mocks.CloudInterface{}
-
-		// mock the cloud functions
-		cloud.Mock.On("GetSubscription", mock.Anything).Return(subscription, nil)
-		cloud.Mock.On("GetCloudProduct", mock.Anything, mock.Anything).Return(cloudProduct, nil)
-		cloud.Mock.On("CreateOrUpdateSubscriptionHistoryEvent", mock.Anything, mock.Anything).Return(subscriptionHistory, nil)
-
-		cloudImpl := th.App.Srv().Cloud
-		defer func() {
-			th.App.Srv().Cloud = cloudImpl
-		}()
-		th.App.Srv().Cloud = &cloud
-
-		// Mock to get the user count
-		mockStore := th.App.Srv().Store().(*storemocks.Store)
-		mockUserStore := storemocks.UserStore{}
-		mockUserStore.On("Count", mock.Anything).Return(int64(10), nil)
-
-		mockStore.On("User").Return(&mockUserStore)
-
-		userID := "123"
-
-		subscriptionHistoryEvent, err := th.App.SendSubscriptionHistoryEvent(userID)
-		require.NoError(t, err)
-		require.Equal(t, subscription.ID, subscriptionHistoryEvent.SubscriptionID, "subscription ID doesn't match")
-		require.Equal(t, 10, subscriptionHistoryEvent.Seats, "Number of seats doesn't match")
-	})
+		require.Nil(t, event)
+	}
 }
 
 func TestGetUsersForReporting(t *testing.T) {

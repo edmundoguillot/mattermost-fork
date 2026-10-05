@@ -34,9 +34,10 @@ describe('components/widgets/menu/menu_items/menu_start_trial', () => {
         useDispatchMock.mockReturnValue(dummyDispatch);
         const {container} = renderWithContext(<MenuStartTrial id='startTrial'/>, state);
 
-        expect(container.querySelector('.editionText')).not.toBeNull();
+        expect(container.querySelector('.editionText')).toBeNull();
         expect(container.textContent).toContain('TEAM EDITION');
-        expect(container.textContent).toContain('This is the free');
+        expect(container.textContent).not.toContain('This is the free');
+        expect(container.querySelector('a')).toBeNull();
     });
 
     test('should render ENTRY EDITION for Entry license', () => {

@@ -79,6 +79,7 @@
                 }
 
                 .login-body-custom-branding-image {
+                    max-width: 100%;
                     max-height: 240px;
                     align-self: self-start;
                     border-radius: 8px;
@@ -269,7 +270,23 @@
                 }
 
                 &.custom-branding {
-                    display: none;
+                    display: flex;
+                    width: calc(100% - 48px);
+                    max-width: 640px;
+                    align-self: center;
+
+                    .login-body-custom-branding-image {
+                        width: 100%;
+                        max-width: 360px;
+                        height: auto;
+                        align-self: center;
+                        margin: 24px 0;
+                    }
+
+                    .login-body-message-subtitle,
+                    .login-body-custom-branding-markdown {
+                        display: none;
+                    }
                 }
             }
 

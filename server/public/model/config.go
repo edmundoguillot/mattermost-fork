@@ -953,7 +953,7 @@ func (s *ServiceSettings) SetDefaults(isUpdate bool) {
 	}
 
 	if s.EnableDesktopLandingPage == nil {
-		s.EnableDesktopLandingPage = new(true)
+		s.EnableDesktopLandingPage = new(false)
 	}
 
 	if s.MinimumDesktopAppVersion == nil {

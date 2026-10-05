@@ -44,10 +44,17 @@ func (ps *PlatformService) SetLicenseManager(impl einterfaces.LicenseInterface) 
 }
 
 func (ps *PlatformService) License() *model.License {
+	if model.BuildForkFeatures == "true" {
+		return model.NewForkFeatureLicense()
+	}
 	return ps.licenseValue.Load()
 }
 
 func (ps *PlatformService) LoadLicense() {
+	if model.BuildForkFeatures == "true" {
+		ps.SetLicense(model.NewForkFeatureLicense())
+		return
+	}
 	c := request.EmptyContext(ps.logger)
 
 	// ENV var overrides all other sources of license.
@@ -255,6 +262,9 @@ func (ps *PlatformService) SaveLicense(licenseBytes []byte) (*model.License, *mo
 }
 
 func (ps *PlatformService) SetLicense(license *model.License) bool {
+	if model.BuildForkFeatures == "true" {
+		license = model.NewForkFeatureLicense()
+	}
 	oldLicense := ps.licenseValue.Load()
 
 	defer func() {
@@ -311,6 +321,9 @@ func (ps *PlatformService) SetClientLicense(m map[string]string) {
 }
 
 func (ps *PlatformService) ClientLicense() map[string]string {
+	if model.BuildForkFeatures == "true" {
+		return utils.GetClientLicense(model.NewForkFeatureLicense())
+	}
 	if clientLicense, _ := ps.clientLicenseValue.Load().(map[string]string); clientLicense != nil {
 		return clientLicense
 	}

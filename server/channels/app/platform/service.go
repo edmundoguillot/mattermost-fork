@@ -379,7 +379,7 @@ func New(sc ServiceConfig, options ...Option) (*PlatformService, error) {
 	}
 
 	// Step 8: Init License
-	if model.BuildEnterpriseReady == "true" {
+	if model.BuildEnterpriseReady == "true" || model.BuildForkFeatures == "true" {
 		ps.LoadLicense()
 	}
 	license := ps.License()

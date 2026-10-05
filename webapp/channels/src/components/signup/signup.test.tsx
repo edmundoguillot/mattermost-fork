@@ -5,6 +5,7 @@ import React from 'react';
 
 import type {ClientConfig} from '@mattermost/types/config';
 
+import {createUser} from 'mattermost-redux/actions/users';
 import {RequestStatus} from 'mattermost-redux/constants';
 
 import {redirectUserToDefaultTeam} from 'actions/global_actions';
@@ -213,6 +214,39 @@ describe('components/signup/Signup', () => {
         expect(passwordInput).toBeDisabled();
 
         expect(mockHistoryPush).toHaveBeenCalledWith('/should_verify_email?email=jdoe%40mm.com&teamname=teamName');
+    });
+
+    it('requires names and matching passwords for an email invitation and sends no chosen username', async () => {
+        mockState.storage.storage = {};
+        mockLocation.search = '?t=invitation-token&d=' + encodeURIComponent(JSON.stringify({email: 'invited@example.com'}));
+        mockDispatch = jest.fn().mockResolvedValue({data: {id: 'new-user'}});
+        jest.mocked(createUser).mockClear();
+        renderWithContext(<Signup/>);
+
+        expect(screen.getByLabelText('Email address')).toHaveValue('invited@example.com');
+        expect(screen.getByLabelText('Email address')).toBeDisabled();
+        expect(screen.queryByLabelText('Choose a Username')).not.toBeInTheDocument();
+        expect(screen.queryByText('or create an account with')).not.toBeInTheDocument();
+        const submit = screen.getByRole('button', {name: 'Create account'});
+        expect(submit).toBeDisabled();
+        await userEvent.type(screen.getByLabelText('First name'), 'José');
+        await userEvent.type(screen.getByLabelText('Last name'), 'García');
+        await userEvent.type(screen.getByLabelText('Choose a Password'), 'Password123!');
+        await userEvent.type(screen.getByLabelText('Confirm password'), 'different');
+        expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+        await userEvent.click(submit);
+        expect(screen.getByText('Passwords do not match')).toBeVisible();
+        expect(createUser).not.toHaveBeenCalled();
+        await userEvent.clear(screen.getByLabelText('Confirm password'));
+        await userEvent.type(screen.getByLabelText('Confirm password'), 'Password123!');
+        await userEvent.click(submit);
+        await waitFor(() => expect(createUser).toHaveBeenCalledWith(expect.objectContaining({
+            email: 'invited@example.com',
+            username: '',
+            first_name: 'José',
+            last_name: 'García',
+            password: 'Password123!',
+        }), 'invitation-token', '', null));
     });
 
     it('should prefill and lock the username when pre-set by the inviter', () => {

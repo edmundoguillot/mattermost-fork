@@ -72,6 +72,7 @@ const Signup = ({onCustomizeHeader}: SignupProps) => {
     const params = new URLSearchParams(search);
     const token = params.get('t') ?? '';
     const inviteId = params.get('id') ?? '';
+    const isEmailInvitation = Boolean(token);
     const data = params.get('d');
     const parsedData: Record<string, string> = data ? JSON.parse(data) : {};
     const {email: parsedEmail, name: parsedTeamName, username: parsedUsername, first_name: parsedFirstName, last_name: parsedLastName} = parsedData;
@@ -128,6 +129,11 @@ const Signup = ({onCustomizeHeader}: SignupProps) => {
     const [email, setEmail] = useState(parsedEmail ?? '');
     const [name, setName] = useState(parsedUsername ?? '');
     const [password, setPassword] = useState('');
+    const [firstName, setFirstName] = useState(parsedFirstName ?? '');
+    const [lastName, setLastName] = useState(parsedLastName ?? '');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [profileError, setProfileError] = useState('');
+    const [confirmPasswordError, setConfirmPasswordError] = useState('');
     const [loading, setLoading] = useState(Boolean(inviteId));
     const [isWaiting, setIsWaiting] = useState(false);
     const [emailError, setEmailError] = useState('');
@@ -138,12 +144,13 @@ const Signup = ({onCustomizeHeader}: SignupProps) => {
     const [teamName, setTeamName] = useState(parsedTeamName ?? '');
     const [alertBanner, setAlertBanner] = useState<AlertBannerProps | null>(null);
     const [isMobileView, setIsMobileView] = useState(false);
+    const requireTerms = !isEmailInvitation || Boolean(TermsOfServiceLink || PrivacyPolicyLink);
     const [acceptedTerms, setAcceptedTerms] = useState(false);
     const [submitClicked, setSubmitClicked] = useState(false);
 
-    const enableExternalSignup = enableSignUpWithGitLab || enableSignUpWithOffice365 || enableSignUpWithGoogle || enableSignUpWithOpenId || enableLDAP || enableSAML;
-    const hasError = Boolean(emailError || nameError || passwordError || serverError || alertBanner);
-    const canSubmit = Boolean(email && name && password && acceptedTerms) && !hasError && !loading;
+    const enableExternalSignup = !isEmailInvitation && (enableSignUpWithGitLab || enableSignUpWithOffice365 || enableSignUpWithGoogle || enableSignUpWithOpenId || enableLDAP || enableSAML);
+    const hasError = Boolean(emailError || nameError || passwordError || profileError || confirmPasswordError || serverError || alertBanner);
+    const canSubmit = Boolean(email && (isEmailInvitation ? firstName.trim() && lastName.trim() && confirmPassword : name) && password && (!requireTerms || acceptedTerms)) && !hasError && !loading;
     const passwordConfig = useSelector(getPasswordConfig);
     const {error: passwordInfo} = isValidPassword('', passwordConfig, intl);
 
@@ -452,6 +459,7 @@ const Signup = ({onCustomizeHeader}: SignupProps) => {
 
     const handlePasswordInputOnChange = ({target: {value: password}}: React.ChangeEvent<HTMLInputElement>) => {
         setPassword(password);
+        setConfirmPasswordError('');
         dismissAlert();
 
         if (passwordError) {
@@ -523,7 +531,18 @@ const Signup = ({onCustomizeHeader}: SignupProps) => {
             isValid = false;
         }
 
-        const providedUsername = nameInput.current?.value.trim().toLowerCase();
+        if (isEmailInvitation) {
+            if (!firstName.trim() || !lastName.trim()) {
+                setProfileError(formatMessage({id: 'signup_user_completed.required', defaultMessage: 'This field is required'}));
+                isValid = false;
+            }
+            if (password !== confirmPassword) {
+                setConfirmPasswordError(formatMessage({id: 'signup_user_completed.passwordMismatch', defaultMessage: 'Passwords do not match'}));
+                isValid = false;
+            }
+        }
+
+        const providedUsername = isEmailInvitation ? undefined : nameInput.current?.value.trim().toLowerCase();
 
         if (providedUsername) {
             const usernameError = isValidUsername(providedUsername);
@@ -547,7 +566,7 @@ const Signup = ({onCustomizeHeader}: SignupProps) => {
                 setNameError(nameError);
                 isValid = false;
             }
-        } else {
+        } else if (!isEmailInvitation) {
             setNameError(formatMessage({id: 'signup_user_completed.required', defaultMessage: 'This field is required'}));
             isValid = false;
         }
@@ -581,7 +600,8 @@ const Signup = ({onCustomizeHeader}: SignupProps) => {
 
             const user = {
                 email: emailInput.current?.value.trim(),
-                username: nameInput.current?.value.trim().toLowerCase(),
+                username: isEmailInvitation ? '' : nameInput.current?.value.trim().toLowerCase(),
+                ...(isEmailInvitation ? {first_name: firstName.trim(), last_name: lastName.trim()} : {}),
                 password: passwordInput.current?.value,
             } as UserProfile;
 
@@ -720,7 +740,7 @@ const Signup = ({onCustomizeHeader}: SignupProps) => {
                             <h2 className='signup-body-card-title'>
                                 {getCardTitle()}
                             </h2>
-                            {(parsedFirstName || parsedLastName) && (
+                            {!isEmailInvitation && (parsedFirstName || parsedLastName) && (
                                 <p
                                     className='signup-body-card-preset-name'
                                     data-testid='signup-body-card-preset-name'
@@ -754,26 +774,63 @@ const Signup = ({onCustomizeHeader}: SignupProps) => {
                                             id: 'signup_user_completed.emailLabel',
                                             defaultMessage: 'Email address',
                                         })}
-                                        disabled={isWaiting || Boolean(parsedEmail)}
-                                        autoFocus={!parsedEmail}
+                                        disabled={isWaiting || isEmailInvitation || Boolean(parsedEmail)}
+                                        autoFocus={!isEmailInvitation && !parsedEmail}
                                         customMessage={emailCustomLabelForInput}
                                     />
-                                    <Input
-                                        ref={nameInput}
-                                        name='name'
-                                        className='signup-body-card-form-name-input'
-                                        type='text'
-                                        inputSize={SIZE.LARGE}
-                                        value={name}
-                                        onChange={handleNameOnChange}
-                                        placeholder={formatMessage({
-                                            id: 'signup_user_completed.chooseUser',
-                                            defaultMessage: 'Choose a Username',
-                                        })}
-                                        disabled={isWaiting || Boolean(parsedUsername)}
-                                        autoFocus={Boolean(parsedEmail) && !parsedUsername}
-                                        customMessage={getUsernameCustomMessage()}
-                                    />
+                                    {isEmailInvitation ? (
+                                        <>
+                                            <Input
+                                                name='first_name'
+                                                type='text'
+                                                inputSize={SIZE.LARGE}
+                                                value={firstName}
+                                                onChange={(e) => {
+                                                    setFirstName(e.target.value);
+                                                    setProfileError('');
+                                                    dismissAlert();
+                                                }}
+                                                placeholder={formatMessage({id: 'signup_user_completed.firstName', defaultMessage: 'First name'})}
+                                                maxLength={64}
+                                                autoComplete='given-name'
+                                                autoFocus={true}
+                                                disabled={isWaiting}
+                                                customMessage={profileError ? {type: ItemStatus.ERROR, value: profileError} : undefined}
+                                            />
+                                            <Input
+                                                name='last_name'
+                                                type='text'
+                                                inputSize={SIZE.LARGE}
+                                                value={lastName}
+                                                onChange={(e) => {
+                                                    setLastName(e.target.value);
+                                                    setProfileError('');
+                                                    dismissAlert();
+                                                }}
+                                                placeholder={formatMessage({id: 'signup_user_completed.lastName', defaultMessage: 'Last name'})}
+                                                maxLength={64}
+                                                autoComplete='family-name'
+                                                disabled={isWaiting}
+                                            />
+                                        </>
+                                    ) : (
+                                        <Input
+                                            ref={nameInput}
+                                            name='name'
+                                            className='signup-body-card-form-name-input'
+                                            type='text'
+                                            inputSize={SIZE.LARGE}
+                                            value={name}
+                                            onChange={handleNameOnChange}
+                                            placeholder={formatMessage({
+                                                id: 'signup_user_completed.chooseUser',
+                                                defaultMessage: 'Choose a Username',
+                                            })}
+                                            disabled={isWaiting || Boolean(parsedUsername)}
+                                            autoFocus={Boolean(parsedEmail) && !parsedUsername}
+                                            customMessage={getUsernameCustomMessage()}
+                                        />
+                                    )}
                                     <PasswordInput
                                         ref={passwordInput}
                                         className='signup-body-card-form-password-input'
@@ -785,35 +842,54 @@ const Signup = ({onCustomizeHeader}: SignupProps) => {
                                         info={passwordInfo as string}
                                         error={passwordError}
                                     />
-                                    <CheckInput
-                                        id='signup-body-card-form-check-terms-and-privacy'
-                                        ariaLabel={formatMessage({id: 'signup.terms_and_privacy.checkmark.box', defaultMessage: 'Terms and privacy policy checkbox'})}
-                                        name='terms'
-                                        onChange={() => setAcceptedTerms(!acceptedTerms)}
-                                        text={
-                                            formatMessage(
-                                                {id: 'signup.terms_and_privacy.checkmark.text', defaultMessage: 'I agree to the <termsOfUseLink>Acceptable Use Policy</termsOfUseLink> and the <privacyPolicyLink>Privacy Policy</privacyPolicyLink>'},
-                                                {
-                                                    privacyPolicyLink: (chunks: React.ReactNode | readonly React.ReactNode[]) => (
-                                                        <ExternalLink
-                                                            href={PrivacyPolicyLink as string}
-                                                            location='signup-privacy-policy'
-                                                        >
-                                                            {chunks}
-                                                        </ExternalLink>
-                                                    ),
-                                                    termsOfUseLink: (chunks: React.ReactNode | readonly React.ReactNode[]) => (
-                                                        <ExternalLink
-                                                            href={TermsOfServiceLink as string}
-                                                            location='signup-terms-of-use'
-                                                        >
-                                                            {chunks}
-                                                        </ExternalLink>
-                                                    ),
-                                                },
-                                            )}
-                                        checked={acceptedTerms}
-                                    />
+                                    {isEmailInvitation && (
+                                        <Input
+                                            name='confirm_password'
+                                            type='password'
+                                            inputSize={SIZE.LARGE}
+                                            value={confirmPassword}
+                                            onChange={(e) => {
+                                                setConfirmPassword(e.target.value);
+                                                setConfirmPasswordError('');
+                                                dismissAlert();
+                                            }}
+                                            placeholder={formatMessage({id: 'signup_user_completed.confirmPassword', defaultMessage: 'Confirm password'})}
+                                            autoComplete='new-password'
+                                            disabled={isWaiting}
+                                            customMessage={confirmPasswordError ? {type: ItemStatus.ERROR, value: confirmPasswordError} : undefined}
+                                        />
+                                    )}
+                                    {requireTerms && (
+                                        <CheckInput
+                                            id='signup-body-card-form-check-terms-and-privacy'
+                                            ariaLabel={formatMessage({id: 'signup.terms_and_privacy.checkmark.box', defaultMessage: 'Terms and privacy policy checkbox'})}
+                                            name='terms'
+                                            onChange={() => setAcceptedTerms(!acceptedTerms)}
+                                            text={
+                                                formatMessage(
+                                                    {id: 'signup.terms_and_privacy.checkmark.text', defaultMessage: 'I agree to the <termsOfUseLink>Acceptable Use Policy</termsOfUseLink> and the <privacyPolicyLink>Privacy Policy</privacyPolicyLink>'},
+                                                    {
+                                                        privacyPolicyLink: (chunks: React.ReactNode | readonly React.ReactNode[]) => (
+                                                            <ExternalLink
+                                                                href={PrivacyPolicyLink as string}
+                                                                location='signup-privacy-policy'
+                                                            >
+                                                                {chunks}
+                                                            </ExternalLink>
+                                                        ),
+                                                        termsOfUseLink: (chunks: React.ReactNode | readonly React.ReactNode[]) => (
+                                                            <ExternalLink
+                                                                href={TermsOfServiceLink as string}
+                                                                location='signup-terms-of-use'
+                                                            >
+                                                                {chunks}
+                                                            </ExternalLink>
+                                                        ),
+                                                    },
+                                                )}
+                                            checked={acceptedTerms}
+                                        />
+                                    )}
                                     <SaveButton
                                         extraClasses='signup-body-card-form-button-submit large'
                                         saving={isWaiting}

@@ -182,7 +182,7 @@ export default class Root extends React.PureComponent<Props, State> {
     componentDidUpdate(prevProps: Props, prevState: State) {
         if (this.props.location.pathname === '/') {
             if (this.props.noAccounts) {
-                prevProps.history.push('/signup_user_complete');
+                prevProps.history.push('/login');
             } else if (this.props.showTermsOfService) {
                 prevProps.history.push('/terms_of_service');
             }
@@ -238,7 +238,7 @@ export default class Root extends React.PureComponent<Props, State> {
                 if (isMeRequested) {
                     this.props.actions.redirectToOnboardingOrDefaultTeam(this.props.history, new URLSearchParams(this.props.location.search));
                 } else if (this.props.noAccounts) {
-                    this.props.history.push('/signup_user_complete');
+                    this.props.history.push('/login');
                 }
             }
 

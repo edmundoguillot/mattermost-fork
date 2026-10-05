@@ -696,9 +696,6 @@ func (s *Server) runJobs() {
 	s.Go(func() {
 		runConfigCleanupJob(s)
 	})
-	s.Go(func() {
-		runCloudUserCountReportJob(s)
-	})
 
 	if complianceI := s.Channels().Compliance; complianceI != nil {
 		go complianceI.StartComplianceDailyJob()

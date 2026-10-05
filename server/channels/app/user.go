@@ -92,23 +92,32 @@ func (a *App) CreateUserWithToken(rctx request.CTX, user *model.User, token *mod
 	user.Email = tokenData["email"]
 	user.EmailVerified = true
 
-	// Profile fields pre-set by the inviter are authoritative over client-supplied values.
-	if username := tokenData["username"]; username != "" {
-		user.Username = strings.ToLower(username)
+	// Email invitation signup collects names and derives the username on the
+	// server; neither client-supplied nor inviter-supplied usernames are trusted.
+	if err := prepareInvitationProfile(user); err != nil {
+		return nil, err
 	}
-	if firstName := tokenData["first_name"]; firstName != "" {
-		user.FirstName = firstName
-	}
-	if lastName := tokenData["last_name"]; lastName != "" {
-		user.LastName = lastName
-	}
-
+	baseUsername := invitationUsername(user.FirstName, user.LastName)
 	var ruser *model.User
 	var err *model.AppError
-	if token.Type == model.TokenTypeTeamInvitation {
-		ruser, err = a.CreateUser(rctx, user)
-	} else {
-		ruser, err = a.CreateGuest(rctx, user)
+	for attempt := 1; attempt <= 1000; attempt++ {
+		candidate := user.DeepCopy() // Save assigns an ID and hashes the password, even on a username collision.
+		candidate.Username = invitationUsernameCandidate(baseUsername, attempt)
+		// Avoid hashing the password again for usernames known to be taken.
+		if _, lookupErr := a.GetUserByUsername(candidate.Username); lookupErr == nil {
+			err = model.NewAppError("CreateUserWithToken", "app.user.save.username_exists.app_error", nil, "", http.StatusBadRequest)
+			continue
+		} else if lookupErr.StatusCode != http.StatusNotFound {
+			return nil, lookupErr
+		}
+		if token.Type == model.TokenTypeTeamInvitation {
+			ruser, err = a.CreateUser(rctx, candidate)
+		} else {
+			ruser, err = a.CreateGuest(rctx, candidate)
+		}
+		if err == nil || err.Id != "app.user.save.username_exists.app_error" {
+			break
+		}
 	}
 	if err != nil {
 		return nil, err
